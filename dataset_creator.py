@@ -1,25 +1,25 @@
 #!/usr/bin/env python3
-import numpy as np
-import cv2
 import os
-from tqdm import tqdm
+import pickle
 import random
-import os
-import matplotlib.pyplot as plt
+from glob import glob
+
+import Augmentor
+import cv2
+import imgaug as ia
 import matplotlib.image as mpimg
 import matplotlib.patches as patches
-import pickle
-from glob import glob
-import imgaug as ia
+import matplotlib.pyplot as plt
+import numpy as np
 from imgaug import augmenters as iaa
 from shapely.geometry import Polygon
-import Augmentor
-#import imports
+from tqdm import tqdm
 
+
+#enforce venv specific opencv version
 cv2_resource_path="./venv/lib/python3.7/site-packages/cv2/data/"
-
-data_dir="data" # Directory that will contain all kinds of data (the data we download and the data we generate)
-
+#set folder for dataset
+data_dir="data"
 if not os.path.isdir(data_dir):
     os.makedirs(data_dir)
 
@@ -28,16 +28,11 @@ card_values=['A','K','Q','J','10','9','8','7','6','5','4','3','2']
 
 # Pickle file containing the background images from the DTD
 backgrounds_pck_fn=data_dir+"/backgrounds.pck"
-
 # Pickle file containing the card images
 cards_pck_fn=data_dir+"/cards.pck"
-
-
 # imgW,imgH: dimensions of the generated dataset images
 imgW=720
 imgH=720
-
-
 
 """ NB. the corners on our card set is not consistent. so I will choose the most inclusive area.
 further the measurements asked seem wrong Ymax should be inclusive of Ymin."""
@@ -62,6 +57,7 @@ xml_body_1 = """<annotation>
                 <depth>3</depth>
         </size>
 """
+
 xml_object = """ <object>
                 <name>{CLASS}</name>
                 <pose>Unspecified</pose>
@@ -78,19 +74,7 @@ xml_object = """ <object>
 xml_body_2 = """</annotation>        
 """
 
-"""
-Various test images paths:
-
-    #img=cv2.imread("./test/all_mads.jpg")
-    #img=cv2.imread("./test/depositphotos_184840322-stock-photo-single-spades-playing-card-gamble.jpg")
-    #img=cv2.imread("./test/96066795-single-of-spades-playing-card-for-gamble-playing-cards-2-isolated-on-black-background-great-for-any-.jpg")
-    #img=cv2.imread("./test/CW_Cards_Africanqueen.jpg")
-    squashpath = "./test/squash2.jpg"
-    squash = cv2.imread(squashpath)
-
-"""
-
-# nealcards
+# neal cards
 
 # cardW = 56
 # cardH = 86
@@ -118,14 +102,17 @@ cornerYmin = 4
 cornerYmax = 22
 #Issues - size - area
 
+
+
 def showimage(image):
+    """function that shows image"""
     cardexample = image
-    cv2.imshow('Contours', cardexample)
+    cv2.imshow('ShowImage', cardexample)
     cv2.waitKey(0)
 
 
-
 def imageTrim(img, top=0, bottom=0, left=0, right=0):
+    """Function to remove edges to make sure the colour is consistent"""
     # - y, then - x.
     ylength = img.shape[0]
     xlength = img.shape[1]
@@ -134,10 +121,12 @@ def imageTrim(img, top=0, bottom=0, left=0, right=0):
     return imgCrop
 
 
+#empty function needed for stacking images.
 def empty(arg):
     pass
 
 def stackImages(scale,imgArray):
+    """Shows images in a row"""
     rows = len(imgArray)
     cols = len(imgArray[0])
     rowsAvailable = isinstance(imgArray[0], list)
@@ -172,6 +161,10 @@ def stackImages(scale,imgArray):
 
 
 def getContours(img, imgContour, imgBlank):
+    """Gets contours in image, looks for a box corresponding to a card,
+     if it finds it shows the area and marks it card
+     N.B. this function is dependent on pixel sizes. areas under 500 are ignored.
+     images passed to the function should be adjusted accordingly deviation is set to 10%"""
     contours, hierachy = cv2.findContours(img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     for cnt in contours:
         area = cv2.contourArea(cnt)
@@ -198,6 +191,10 @@ def getContours(img, imgContour, imgBlank):
 
 
 def getContours_dataset2(img, imgContour):
+    """Gets contours in image, looks for a box corresponding to a card,
+     if it finds it shows the area and marks it card
+     N.B. this function is dependent on pixel sizes. areas under 500 are ignored.
+     images passed to the function should be adjusted accordingly deviation is set to 10%"""
     contours, hierachy = cv2.findContours(img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     for cnt in contours:
         area = cv2.contourArea(cnt)
@@ -250,80 +247,12 @@ def get_single_contours(img):
 
 
 
-def card_prep():
-    img1 = cv2.imread("./dataset2_blackbackground/4d.jpg")
-    img2 = cv2.imread("./dataset2_blackbackground/As.jpg")
-    img3 = cv2.imread("./dataset2_blackbackground/Ac.jpg")
-    imgStack = stackImages(0.4,[img1,img2,img3])
 
-    def callback(foo):
-        pass
-
-    # create windows and trackbar
-    cv2.namedWindow('parameters')
-    cv2.createTrackbar('threshold1', 'parameters', 0, 255, callback)  # change the maximum to whatever you like
-    cv2.createTrackbar('threshold2', 'parameters', 0, 255, callback)  # change the maximum to whatever you like
-    cv2.createTrackbar('apertureSize', 'parameters', 0, 2, callback)
-    cv2.createTrackbar('L1/L2', 'parameters', 0, 1, callback)
-
-    while (True):
-        # get threshold value from trackbar
-        th1 = cv2.getTrackbarPos('threshold1', 'parameters')
-        th2 = cv2.getTrackbarPos('threshold2', 'parameters')
-
-        # aperture size can only be 3,5, or 7
-        apSize = cv2.getTrackbarPos('apertureSize', 'parameters') * 2 + 3
-
-        # true or false for the norm flag
-        norm_flag = cv2.getTrackbarPos('L1/L2', 'parameters') == 1
-
-        # print out the values
-        print('')
-        print('threshold1: {}'.format(th1))
-        print('threshold2: {}'.format(th2))
-        print('apertureSize: {}'.format(apSize))
-        print('L2gradient: {}'.format(norm_flag))
-
-        cv2.imshow("orginal", imgStack)
-        gray = cv2.cvtColor(imgStack, cv2.COLOR_BGRA2GRAY)
-        # Convert in gray color
-        #gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
-        # Noise-reducing and edge-preserving filter
-        gray=cv2.bilateralFilter(gray,5,75,75)
-        # Edge extraction
-        #edge=cv2.Canny(gray, 0, 197, apertureSize=3)
-        imgGray = cv2.cvtColor(img1, cv2.COLOR_BGRA2GRAY)
-        imgBlur = cv2.GaussianBlur(imgGray, (7, 7), 1)
-        imgCanny = cv2.Canny(imgGray, 0, 197)
-        imgCanny = cv2.Canny(gray, th1, th2, apertureSize=apSize, L2gradient=norm_flag)
-        #imgCanny = cv2.Canny(imgBlur, 0, 197)
-        imgBlank = np.zeros_like(img1)
-        imgContours = img1.copy()
-
-        getContours(imgCanny, imgContours, imgBlank)
-        #getContours_dataset2(gray, edge)
-        imgStack = stackImages(.4, [img1, imgBlur, imgCanny, imgContours, imgBlank])
-        #edge = cv2.Canny(gray, th1, th2, apertureSize=apSize, L2gradient=norm_flag)
-        cv2.imshow('stack', imgStack)
-
-        if cv2.waitKey(1000) & 0xFF == ord('q'):
-            break
-
-    cv2.destroyAllWindows()
-
-
-def card_prep2(imgpath):
-    #img1 = cv2.imread("./dataset2_blackbackground/4d.jpg")
-    #img1 = cv2.imread("./dataset2_blackbackground/As.jpg")
-    #img1 = cv2.imread("./dataset2_blackbackground/2c.jpg")
+def card_prep(imgpath, resize_adjustment=1):
     img1 = cv2.imread(imgpath)
-
-    ylength = int(img1.shape[0]/1)
-    xlength = int(img1.shape[1]/1)
-    img1 = cv2.resize(img1,(xlength,ylength))
-
-    #imgStack = stackImages(0.4, [img1, img2, img3])
-    #cv2.imshow("orginal", imgStack)
+    ylength = int(img1.shape[0]/resize_adjustment)
+    xlength = int(img1.shape[1]/resize_adjustment)
+    img1 = cv2.resize(img1, (xlength,ylength))
 
     def callback(foo):
         pass
@@ -702,7 +631,7 @@ refCornerLR=np.array([[cardW-cornerXmax,cardH-cornerYmax],
 refCorners=np.array([refCornerHL,refCornerLR])
 
 
-def findHull(img, corner=refCornerHL, debug="no",test=False):
+def findHull(img, corner=refCornerHL, debug="no", test=False):
     """
         this function is taken from Jupyternotebook.
         Find in the zone 'corner' of image 'img' and return, the convex hull delimiting
@@ -1249,48 +1178,58 @@ def generate_scenes(backgrounds, cards, n):
 
 def main():
     print("main")
-    #first place cards in dataset2_blackbackground/
-    #with cardnumbersuit name
-    #choose a few cards to adjust settings with.
-    #card_prep2("./dataset2_blackbackground/4s.jpg")
-    # # img1 = cv2.imread("./dataset2_blackbackground/2c.jpg")
-    # # img2 = cv2.imread("./dataset2_blackbackground/2h.jpg")
-    # img3 = cv2.imread("./dataset2_blackbackground/4d.jpg")
-    #img4 = cv2.imread("./dataset2_blackbackground/4d.jpg")
-    #card_prep2("./4h.png")
-    #img4h = cv2.imread("./4h.png")
-    #card_prep_image(img4)
-    # cardexample = card_extract(img4, debug=1)
-    # cv2.imshow('Contours', cardexample)
+    """  first place cards in ./raw_data/
+         with numbersuit as name i.e. '2c.jpg' """
+
+    raw_img_path = "./raw_data/4s.jpg"
+    resize = 4
+    """Use the card_prep function to adjust threshold settings
+    'resize' must be adjusted relative to pixel size of image
+    Uncomment following line
+    Press q to quit"""
+
+    #card_prep(img_path, resize)
+
+    """Use the following 4 lines to extract (cut out) one card and show the result
+        press q to pass through the progressions"""
+
+    # image = cv2.imread(raw_img_path)
+    # image = image_resize_for_extract(image, resize)
+    # card_example = card_extract(image, debug=1)
+    # cv2.imshow('card_example', card_example)
     # cv2.waitKey(0)
-    #save acceptable settings
-    #card_extract(img, output_fn=None, crop=0, debug=0):
-    #card_extract(img4h , "./4h.jpg",2)
-    #extract_all("./dataset2_blackbackground/")
-    #extract_all("./dataset2_blackbackground/")
-    #create varying brightness and contrast
+
+    """When the resizing factor and the opencv settings are satisfactory
+    edit the card extract function and run the following lines of code"""
+
+    #extract_all("./raw_data/")
+    """Next step is to find the hull - the area within the playing card that will identify it
+    it is recommended that this is done on many cards to ascertain the limits, the limits are then
+    edited in the findHull function"""
+
+    # extracted_img_path = "data/cards/Kh/Kh.jpg"
+    # image = cv2.imread(extracted_img_path)
+    # findHull(image, debug=True, test=True)
+
+    """Now the creation of the dataset starts"""
+    """Augmentation of the photos, creating copies varying brightness and contrast"""
     #augment_images(300)
-    # adjust cards now to see if the hull areas fit
-    # adjust the area values in findhull  function if they are too small
-    #imghull = cv2.imread("./data/cards/10h/10h.jpg")
-    #imghull = cv2.imread("./data/cards/4h/4h.jpg")
-    #imghull = cv2.imread("./data/cards/Ah/Ah.jpg")
-    #cv2.imshow("orig", imghull)
-    #findHull(imghull, debug=True,test=True)
-    # imghull = cv2.imread("./data/cards/Ks/Ks.jpg")
-    # cv2.imshow("orig", imghull)
-    # findHull(imghull, debug=True,test=True)
-    #create pickle files of the background and the cards
-    #N.B. backgrounds must be downloaded from here:
-    #wget https://www.robots.ox.ac.uk/~vgg/data/dtd/download/dtd-r1.0.1.tar.gz
-    #tar xf dtd-r1.0.1.tar.gz dtd
 
-    pickle_bc()
-    pickle_cards()
-    cards = Cards()
-    backgrounds = Backgrounds()
+    """Now backgrounds must be downloaded"""
 
-    # test card scene generation
+
+    """from here:
+    wget https://www.robots.ox.ac.uk/~vgg/data/dtd/download/dtd-r1.0.1.tar.gz
+    tar xf dtd-r1.0.1.tar.gz dtd"""
+
+    """create pickle files of the background and the cards
+        using the following lines"""
+    #pickle_bc()
+    #pickle_cards()
+    #cards = Cards()
+    #backgrounds = Backgrounds()
+
+    """test card scene generation"""
     #bg = backgrounds.get_random()
     # img1, card_val1, hulla1= cards.get_random()
     # img2, card_val2, hulla2= cards.get_random()
@@ -1301,9 +1240,10 @@ def main():
     # newimg.write_files()
 
 
-    #generate scenes
-    #generate_scenes(backgrounds, cards, 5000)
+    """Use the following line to generate 100,000 scenes with cards for training our neural network """
+    #generate_scenes(backgrounds, cards, 100000)
 
+    """These must then be converted from xml to yolo coordinates"""
     # !python convert_voc_yolo.py data/scenes/val data/cards.names data/val.txt
     # python convert_voc_yolo.py data/scenes/train data/cards.names data/train.txt
 
